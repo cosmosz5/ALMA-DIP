@@ -1,0 +1,647 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>ALMA-DIP — Deep Image Prior for Radio Interferometry</title>
+  <meta name="description"
+        content="Reconstruct radio-astronomical images from ALMA visibilities using Deep Image Prior, Student-t likelihood, and bootstrap uncertainty estimation." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+<div class="page-wrap">
+
+  <!-- ── Sidebar ──────────────────────────────────────────── -->
+  <nav class="sidebar" aria-label="Documentation navigation">
+    <div class="sidebar-logo">
+      <div class="logo-title">ALMA-DIP</div>
+      <div class="logo-sub">v1.0 · cosmosz5</div>
+    </div>
+
+    <div class="sidebar-section">
+      <div class="sidebar-section-title">Overview</div>
+      <a href="#overview" class="active">Introduction</a>
+      <a href="#how-it-works">How It Works</a>
+      <a href="#architecture">Architecture</a>
+    </div>
+
+    <div class="sidebar-section">
+      <div class="sidebar-section-title">Getting Started</div>
+      <a href="#installation">Installation</a>
+      <a href="#quickstart">Quick Start</a>
+      <a href="#input-format">Input Data Format</a>
+      <a href="#output-files">Output Files</a>
+    </div>
+
+    <div class="sidebar-section">
+      <div class="sidebar-section-title">Reference</div>
+      <a href="#configuration">Configuration (DIPConfig)</a>
+      <a href="#api">API Reference</a>
+      <a href="#bootstrap">Bootstrap Uncertainty</a>
+      <a href="#paths">Computation Paths</a>
+      <a href="#device">Device Selection</a>
+    </div>
+
+    <div class="sidebar-section">
+      <div class="sidebar-section-title">Project</div>
+      <a href="https://github.com/cosmosz5/ALMA-DIP" target="_blank" rel="noopener">GitHub ↗</a>
+    </div>
+  </nav>
+
+  <!-- ── Main ─────────────────────────────────────────────── -->
+  <main>
+
+    <!-- Hero -->
+    <div class="hero" id="overview">
+      <div class="hero-badge">&#9670; Radio Interferometry · Deep Learning · PyTorch</div>
+      <h1>ALMA-<span>DIP</span></h1>
+      <p class="hero-desc">
+        Reconstruct radio-astronomical images directly from ALMA visibility data
+        using a <strong>Deep Image Prior</strong> U-Net generator, a
+        <strong>Student-t</strong> data-fidelity loss for outlier robustness, and
+        <strong>bootstrap resampling</strong> for per-pixel uncertainty maps.
+      </p>
+      <div class="hero-actions">
+        <a class="btn btn-primary" href="#quickstart">Get started</a>
+        <a class="btn btn-ghost" href="https://github.com/cosmosz5/ALMA-DIP" target="_blank" rel="noopener">
+          View on GitHub
+        </a>
+      </div>
+    </div>
+
+    <!-- Feature cards -->
+    <div class="cards">
+      <div class="card">
+        <div class="card-icon">&#127775;</div>
+        <h3>Deep Image Prior</h3>
+        <p>No training data needed. The U-Net structure itself acts as a prior that naturally favours smooth, structured images.</p>
+      </div>
+      <div class="card">
+        <div class="card-icon">&#128202;</div>
+        <h3>Bootstrap Uncertainty</h3>
+        <p>Poisson or Bayesian bootstrap replicates yield per-pixel std, p16, and p84 maps at no extra memory cost.</p>
+      </div>
+      <div class="card">
+        <div class="card-icon">&#9889;</div>
+        <h3>Auto Path Selection</h3>
+        <p>Automatically switches between a precomputed-table path (small N) and a memory-efficient mini-batch path (large N).</p>
+      </div>
+      <div class="card">
+        <div class="card-icon">&#128272;</div>
+        <h3>Robust Likelihood</h3>
+        <p>Student-t NLL with tunable degrees of freedom ν tolerates RFI-affected or otherwise outlier-contaminated visibilities.</p>
+      </div>
+    </div>
+
+    <!-- How it works -->
+    <section id="how-it-works">
+      <h2>How It Works <a class="anchor" href="#how-it-works">#</a></h2>
+      <p>
+        Standard CLEAN-based imagers reconstruct the sky brightness distribution
+        by iteratively subtracting the PSF from a dirty image.  DIP takes a
+        different approach: it parameterises the image as the output of a randomly
+        initialised U-Net and fits the network weights directly to the measured
+        visibilities via gradient descent.  The network architecture itself acts
+        as a structural prior — favouring smooth, physically plausible images —
+        without ever being trained on labelled data.
+      </p>
+      <p>
+        The data-fidelity term uses a <strong>bivariate Student-t
+        negative log-likelihood</strong> rather than the usual least-squares loss.
+        This makes the reconstruction significantly more robust to outliers caused
+        by radio-frequency interference (RFI) or calibration errors.
+      </p>
+      <p>
+        <strong>Uncertainty estimation</strong> is handled by running B
+        independent reconstructions, each with visibility weights drawn from a
+        Poisson(1) or Exp(1) distribution.  The resulting per-pixel spread gives
+        a principled measure of how well the data constrain each image pixel.
+      </p>
+    </section>
+
+    <!-- Architecture -->
+    <section id="architecture">
+      <h2>Architecture <a class="anchor" href="#architecture">#</a></h2>
+
+      <div class="arch-diagram" role="img" aria-label="Architecture diagram">
+<span class="hl">Visibility data</span>  (u, v, Re, Im, w)
+        │
+        ▼
+┌───────────────────────────────────────┐
+│          <span class="hl2">reconstruct_dip()</span>             │  ← public entry point
+│    auto-selects small vs memory path  │
+└──────────────┬────────────────────────┘
+               │
+       ┌───────┴────────┐
+       ▼                ▼
+<span class="hl">Small path</span>         <span class="hl">Memory path</span>
+Precompute         Mini-batch sampling
+N×H, N×W           via <span class="hl3">VisibilitySampler</span>
+trig tables        (stratified mixture)
+       │                │
+       │    SNIS         │  importance-weight
+       │    correction   │  corrects for
+       │                │  non-uniform draws
+       └───────┬────────┘
+               ▼
+      ┌─────────────────┐
+      │   <span class="hl2">DIPUNet</span>        │  U-Net generator
+      │  (5-level enc-  │  GroupNorm + LeakyReLU
+      │   decoder)      │  bilinear upsampling
+      └────────┬────────┘
+               │  image = softplus(net(z))
+               ▼
+      <span class="hl3">StudentTLoss</span>  +  TV regularisation
+               │
+               ▼
+       Best-loss image  →  FITS output
+               │
+               ▼
+      <span class="hl2">bootstrap_reconstruct()</span>
+       B replicates with hashed
+       Poisson / Bayesian weights
+               │
+               ▼
+      mean / std / p16 / p84  maps
+      </div>
+
+      <h3>U-Net Generator (DIPUNet)</h3>
+      <p>
+        The generator is a 5-level U-Net that takes a fixed random tensor
+        <code>z ∈ ℝ^[1 × D × H × W]</code> as input and outputs the
+        reconstructed image <code>I ∈ ℝ^[H × W]</code>.  Because
+        <code>z</code> is never updated — only the network weights are —
+        the network's implicit bias toward structured outputs acts as the prior.
+      </p>
+      <p>
+        Key design choices that differ from the original DIP paper:
+        <strong>reflection padding</strong> (avoids edge artefacts),
+        <strong>GroupNorm</strong> (stable on single-sample batches),
+        <strong>bilinear upsampling</strong> (no transpose-conv checkerboard),
+        and <strong>softplus</strong> output for positivity.
+      </p>
+
+      <h3>Stratified Visibility Sampler (VisibilitySampler)</h3>
+      <p>
+        For large datasets (N &gt; 5 M), the memory path draws mini-batches
+        from a mixture of five components to ensure good coverage of (u, v) space:
+      </p>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Component</th><th>Weight (α)</th><th>Description</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr><td>Uniform</td><td>alpha_uniform</td><td>Draws any visibility with equal probability</td></tr>
+            <tr><td>Radial</td><td>alpha_radial</td><td>Stratifies by baseline length ρ = √(u²+v²)</td></tr>
+            <tr><td>Inv-radius</td><td>alpha_inv_radius</td><td>Weights ∝ 1/ρ^γ, boosting short baselines</td></tr>
+            <tr><td>Weight-prop</td><td>alpha_weight</td><td>Samples proportional to visibility weight w</td></tr>
+            <tr><td>Angular</td><td>alpha_angular</td><td>Stratifies by position angle (optional)</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p>
+        Each drawn index is returned alongside its mixture density
+        <code>p_mix(i)</code>, which is used to compute the SNIS correction
+        factor <code>u_unif / p_mix(i)</code> so the stochastic gradient
+        remains an unbiased estimate of the full-data gradient.
+      </p>
+    </section>
+
+    <!-- Installation -->
+    <section id="installation">
+      <h2>Installation <a class="anchor" href="#installation">#</a></h2>
+
+      <h3>Requirements</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Package</th><th>Minimum version</th><th>Notes</th></tr></thead>
+          <tbody>
+            <tr><td>torch</td><td>2.0</td><td>MPS, CUDA, or CPU backend</td></tr>
+            <tr><td>numpy</td><td>1.24</td><td></td></tr>
+            <tr><td>astropy</td><td>5.3</td><td>FITS I/O only</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>Install</h3>
+      <pre><code class="language-bash">git clone https://github.com/cosmosz5/ALMA-DIP.git
+cd ALMA-DIP
+pip install -r requirements.txt</code><span class="lang-tag">bash</span></pre>
+
+      <div class="callout tip">
+        <span class="callout-icon">&#128161;</span>
+        <div>
+          <strong>Apple Silicon (MPS):</strong> PyTorch ships with MPS support
+          since v2.0 — no extra steps needed. Run on MPS with
+          <code>pick_device("mps")</code>.
+        </div>
+      </div>
+
+      <div class="callout tip">
+        <span class="callout-icon">&#128161;</span>
+        <div>
+          <strong>NVIDIA GPU:</strong> Install the CUDA-enabled wheel from
+          <a href="https://pytorch.org/get-started/locally/" target="_blank" rel="noopener">pytorch.org</a>,
+          then use <code>pick_device("cuda")</code>.
+        </div>
+      </div>
+    </section>
+
+    <!-- Quick Start -->
+    <section id="quickstart">
+      <h2>Quick Start <a class="anchor" href="#quickstart">#</a></h2>
+      <p>Place your visibility file (<code>DG_Tau.txt</code>) in the project
+         directory and run:</p>
+      <pre><code class="language-bash">python run_alma_dip_bootstrapping.py</code><span class="lang-tag">bash</span></pre>
+
+      <p>For a quick test (runs in a few minutes on GPU):</p>
+      <pre><code class="language-python">from alma_dip_bootstrapping import DIPConfig, reconstruct_dip, pick_device
+import numpy as np
+
+data   = np.loadtxt("DG_Tau.txt", skiprows=1).astype("float32")
+uv     = data[:, :2]
+vis    = data[:, 2:4]
+weight = data[:, 4]
+
+cfg = DIPConfig(num_iters=200, out_every=50, tv_weight=1e-2)
+device = str(pick_device())   # auto: MPS → CUDA → CPU
+
+image, dirty, psf = reconstruct_dip(
+    uv=uv, vis=vis, weight=weight,
+    img_size=(540, 540),
+    cfg=cfg, device=device,
+)</code><span class="lang-tag">python</span></pre>
+    </section>
+
+    <!-- Input format -->
+    <section id="input-format">
+      <h2>Input Data Format <a class="anchor" href="#input-format">#</a></h2>
+      <p>
+        The visibility file is a whitespace-delimited ASCII table with a
+        single header row followed by one visibility per line:
+      </p>
+      <pre><code>u            v            Re           Im           weight
+-12345.678   890.123      0.00412      -0.00231     245.3
+...
+</code><span class="lang-tag">txt</span></pre>
+
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Column</th><th>Unit</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td>u</td><td>wavelengths</td><td>East baseline coordinate</td></tr>
+            <tr><td>v</td><td>wavelengths</td><td>North baseline coordinate</td></tr>
+            <tr><td>Re</td><td>Jy</td><td>Real part of visibility</td></tr>
+            <tr><td>Im</td><td>Jy</td><td>Imaginary part of visibility</td></tr>
+            <tr><td>weight</td><td>Jy⁻²</td><td>Natural (or Briggs) weight</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p>All columns are cast to <code>float32</code> after loading. The file is
+         loaded with <code>numpy.loadtxt(..., skiprows=1)</code>.</p>
+
+      <p>Alternatively you can pass a 5-column <code>[N, 5]</code> array
+         directly to any of the reconstruction functions and omit
+         the <code>vis</code> and <code>weight</code> arguments.</p>
+    </section>
+
+    <!-- Output files -->
+    <section id="output-files">
+      <h2>Output Files <a class="anchor" href="#output-files">#</a></h2>
+      <p>All outputs are written as 2-D single-precision FITS images (<code>float32</code>).</p>
+
+      <div class="file-grid">
+        <div class="file-item">
+          <div>
+            <span class="file-name">DG_Tau_dip_image.fits</span>
+            <span class="file-desc">DIP reconstructed intensity map — the main science output.</span>
+          </div>
+        </div>
+        <div class="file-item">
+          <div>
+            <span class="file-name">DG_Tau_dip_dirty.fits</span>
+            <span class="file-desc">Dirty image (weighted back-projection of the visibilities).</span>
+          </div>
+        </div>
+        <div class="file-item">
+          <div>
+            <span class="file-name">DG_Tau_dip_beam.fits</span>
+            <span class="file-desc">Point spread function (PSF / synthesised beam).</span>
+          </div>
+        </div>
+        <div class="file-item">
+          <div>
+            <span class="file-name">DG_Tau_bootstrap_mean.fits</span>
+            <span class="file-desc">Pixel-wise mean over the B bootstrap replicates.</span>
+          </div>
+        </div>
+        <div class="file-item">
+          <div>
+            <span class="file-name">DG_Tau_bootstrap_std.fits</span>
+            <span class="file-desc">Pixel-wise standard deviation — 1σ uncertainty map.</span>
+          </div>
+        </div>
+        <div class="file-item">
+          <div>
+            <span class="file-name">DG_Tau_bootstrap_p16.fits</span>
+            <span class="file-desc">16th-percentile map (lower ±1σ-equivalent bound).</span>
+          </div>
+        </div>
+        <div class="file-item">
+          <div>
+            <span class="file-name">DG_Tau_bootstrap_p84.fits</span>
+            <span class="file-desc">84th-percentile map (upper ±1σ-equivalent bound).</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Configuration -->
+    <section id="configuration">
+      <h2>Configuration — DIPConfig <a class="anchor" href="#configuration">#</a></h2>
+      <p>
+        All tunable knobs live in the <code>DIPConfig</code> dataclass.
+        Pass an instance to any reconstruction function.
+      </p>
+
+      <h3>Optimisation</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Parameter</th><th>Default</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td>seed</td><td>123</td><td>RNG seed for both torch and numpy</td></tr>
+            <tr><td>num_iters</td><td>2500</td><td>Number of Adam gradient steps</td></tr>
+            <tr><td>lr</td><td>1e-3</td><td>Adam learning rate</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>Regularisation &amp; Likelihood</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Parameter</th><th>Default</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td>tv_weight</td><td>5e-5</td><td>Isotropic TV regularisation strength (higher → smoother)</td></tr>
+            <tr><td>positivity</td><td>True</td><td>Enforce I ≥ 0 via softplus output activation</td></tr>
+            <tr><td>nu</td><td>3.0</td><td>Student-t degrees of freedom (lower → heavier tails, more robust)</td></tr>
+            <tr><td>learn_sigma</td><td>False</td><td>Jointly optimise the scale parameter σ</td></tr>
+            <tr><td>init_sigma</td><td>1.0</td><td>Initial value of σ</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>Generator (U-Net)</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Parameter</th><th>Default</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td>input_depth</td><td>32</td><td>Channels of the fixed random input z</td></tr>
+            <tr><td>base_channels</td><td>64</td><td>Channel width at the shallowest level (doubles per level)</td></tr>
+            <tr><td>depth</td><td>5</td><td>Number of encoder/decoder levels</td></tr>
+            <tr><td>dropout</td><td>0.0</td><td>Spatial dropout rate (0 = disabled)</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>Image Geometry</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Parameter</th><th>Default</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td>cell_size_arcsec</td><td>0.10</td><td>Pixel scale in arcseconds</td></tr>
+            <tr><td>out_every</td><td>200</td><td>Print a progress line every N iterations</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>Path Selection</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Parameter</th><th>Default</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td>force_mode</td><td>"auto"</td><td><code>"auto"</code> | <code>"small"</code> | <code>"memory"</code></td></tr>
+            <tr><td>auto_threshold_n</td><td>5 000 000</td><td>Use memory path when N exceeds this value</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>Memory-Path Sampler</h3>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Parameter</th><th>Default</th><th>Description</th></tr></thead>
+          <tbody>
+            <tr><td>batch_vis</td><td>16384</td><td>Mini-batch size drawn per iteration</td></tr>
+            <tr><td>stream_chunk_vis</td><td>None</td><td>Chunk size for streaming dirty/PSF (defaults to batch_vis)</td></tr>
+            <tr><td>radial_bins</td><td>48</td><td>Number of annular strata</td></tr>
+            <tr><td>radial_quantiles</td><td>True</td><td>Quantile-equal bin edges (vs log-space)</td></tr>
+            <tr><td>low_k_bins</td><td>3</td><td>Number of innermost bins to boost</td></tr>
+            <tr><td>low_k_boost</td><td>3.0</td><td>Multiplicative weight for low-k bins</td></tr>
+            <tr><td>alpha_uniform</td><td>0.10</td><td>Uniform mixture weight</td></tr>
+            <tr><td>alpha_radial</td><td>0.55</td><td>Radial-stratified mixture weight</td></tr>
+            <tr><td>alpha_inv_radius</td><td>0.35</td><td>Inverse-radius mixture weight</td></tr>
+            <tr><td>importance_snis</td><td>True</td><td>Use SNIS (True) vs plain IS (False)</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- API Reference -->
+    <section id="api">
+      <h2>API Reference <a class="anchor" href="#api">#</a></h2>
+
+      <h3>pick_device</h3>
+      <pre><code class="language-python">pick_device(explicit: str | None = None) -> torch.device</code><span class="lang-tag">python</span></pre>
+      <p>
+        Return a compute device. When <code>explicit</code> is <code>None</code>,
+        auto-detects in order: MPS → CUDA → CPU.
+      </p>
+
+      <h3>reconstruct_dip</h3>
+      <pre><code class="language-python">reconstruct_dip(
+    uv:      np.ndarray | torch.Tensor,   # [N,2] or [N,5]
+    vis:     np.ndarray | torch.Tensor,   # [N,2]  optional if uv has 5 cols
+    weight:  np.ndarray | torch.Tensor,   # [N]    optional if uv has 5 cols
+    img_size: tuple[int, int] = (256, 256),
+    cfg:     DIPConfig | None = None,
+    device:  str | None = None,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]   # image, dirty, psf</code><span class="lang-tag">python</span></pre>
+      <p>
+        Main reconstruction entry point. Automatically selects the small or
+        memory path based on N and <code>cfg.auto_threshold_n</code>.
+        Returns three <code>float32</code> arrays of shape
+        <code>[H, W]</code>.
+      </p>
+
+      <h3>bootstrap_reconstruct</h3>
+      <pre><code class="language-python">bootstrap_reconstruct(
+    uv, vis, weight, img_size, cfg,
+    device: str | None = None,
+    *,
+    B:           int   = 20,
+    method:      str   = "poisson",    # "poisson" | "bayesian"
+    percentiles: tuple = (16.0, 84.0),
+    return_all:  bool  = False,
+) -> dict[str, np.ndarray]
+# keys: "mean", "std", "p_lo", "p_hi"  [H,W] each
+#       "samples" [B,H,W]  if return_all=True</code><span class="lang-tag">python</span></pre>
+      <p>
+        Run B bootstrap replicates and return per-pixel uncertainty statistics.
+        Bootstrap weights are generated deterministically from a SplitMix64
+        hash of <code>(index, replicate)</code>, so no O(N×B) memory is needed.
+      </p>
+    </section>
+
+    <!-- Bootstrap -->
+    <section id="bootstrap">
+      <h2>Bootstrap Uncertainty <a class="anchor" href="#bootstrap">#</a></h2>
+      <p>
+        Classical CLEAN does not naturally produce uncertainty maps.
+        ALMA-DIP provides two bootstrap schemes that quantify how much
+        each pixel is constrained by the data:
+      </p>
+
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Method</th><th>Weight distribution</th><th>Interpretation</th></tr></thead>
+          <tbody>
+            <tr>
+              <td>poisson</td>
+              <td>s_i ~ Poisson(1)</td>
+              <td>Classical non-parametric bootstrap. Integer counts per visibility.</td>
+            </tr>
+            <tr>
+              <td>bayesian</td>
+              <td>s_i ~ Exp(1)</td>
+              <td>Bayesian bootstrap. Continuous weights, smoother replicate distribution.</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p>
+        The weights are computed <em>without</em> storing an N×B matrix —
+        each weight is derived on-the-fly from a deterministic hash of the
+        visibility index and replicate number (SplitMix64 mixing).
+      </p>
+
+      <div class="callout">
+        <span class="callout-icon">&#128203;</span>
+        <div>
+          The 16th and 84th percentile maps bracket a ±1σ-equivalent interval
+          under a Gaussian distribution, making them directly comparable to
+          image-plane noise estimates from CASA's <code>tclean</code>.
+        </div>
+      </div>
+    </section>
+
+    <!-- Computation paths -->
+    <section id="paths">
+      <h2>Computation Paths <a class="anchor" href="#paths">#</a></h2>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Path</th><th>When selected</th><th>GPU memory</th><th>Per-iteration cost</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Small</td>
+              <td>N ≤ auto_threshold_n</td>
+              <td>O(N × max(H,W))</td>
+              <td>Low (all trig precomputed)</td>
+            </tr>
+            <tr>
+              <td>Memory</td>
+              <td>N &gt; auto_threshold_n</td>
+              <td>O(batch_vis × max(H,W))</td>
+              <td>Higher per step, SNIS-corrected</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>Small path</h3>
+      <p>
+        Precomputes the full N×W cosine/sine tables
+        <code>Cul = cos(2πul)</code>, <code>Sul = sin(2πul)</code>, and
+        the corresponding N×H tables for v×m.  The 2-D DFT is then
+        evaluated per iteration as two matrix multiplications.
+        Fast per iteration but requires O(N × max(H,W) × 4) floats of VRAM.
+        For N = 500 k, H = W = 540 this is roughly 2 GB.
+      </p>
+
+      <h3>Memory path</h3>
+      <p>
+        At each iteration draws <code>batch_vis</code> indices from
+        <code>VisibilitySampler</code> and computes the partial DFT
+        on-the-fly for just those baselines.  A Self-Normalised Importance
+        Sampling (SNIS) weight corrects for the non-uniform draw probability.
+        GPU memory is bounded by the mini-batch size, making this path
+        feasible for datasets with tens of millions of visibilities.
+      </p>
+    </section>
+
+    <!-- Device selection -->
+    <section id="device">
+      <h2>Device Selection <a class="anchor" href="#device">#</a></h2>
+      <pre><code class="language-python">from alma_dip_bootstrapping import pick_device
+
+# Auto-detect (MPS → CUDA → CPU)
+device = str(pick_device())
+
+# Force a specific backend
+device = str(pick_device("mps"))   # Apple Silicon GPU
+device = str(pick_device("cuda"))  # NVIDIA GPU
+device = str(pick_device("cpu"))   # CPU fallback</code><span class="lang-tag">python</span></pre>
+
+      <div class="callout warn">
+        <span class="callout-icon">&#9888;&#65039;</span>
+        <div>
+          On MPS, <code>torch.float32</code> is used throughout.  MPS does not
+          support <code>float64</code> operations, so the bootstrap hash outputs
+          are computed on CPU before being transferred.
+        </div>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<footer>
+  <span>ALMA-DIP · MIT License</span>
+  <span>
+    <a href="https://github.com/cosmosz5/ALMA-DIP" target="_blank" rel="noopener">GitHub</a>
+    &nbsp;·&nbsp;
+    Built with PyTorch &amp; Astropy
+  </span>
+</footer>
+
+<script>
+  // Highlight the active sidebar link based on scroll position
+  const sections = document.querySelectorAll("section[id], .hero[id]");
+  const links    = document.querySelectorAll(".sidebar a");
+
+  const observer = new IntersectionObserver(entries => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        links.forEach(l => l.classList.remove("active"));
+        const target = document.querySelector(`.sidebar a[href="#${entry.target.id}"]`);
+        if (target) target.classList.add("active");
+      }
+    });
+  }, { rootMargin: "0px 0px -70% 0px", threshold: 0 });
+
+  sections.forEach(s => observer.observe(s));
+</script>
+</body>
+</html>
