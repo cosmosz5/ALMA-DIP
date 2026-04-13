@@ -142,3 +142,9 @@ device = str(pick_device())        # auto-detect: MPS → CUDA → CPU
 - [PyTorch](https://pytorch.org/) ≥ 2.0
 - [NumPy](https://numpy.org/) ≥ 1.24
 - [Astropy](https://www.astropy.org/) ≥ 5.3 (FITS I/O)
+
+---
+
+## Acknowledgement
+
+This research has been done with the support of the Mexican Secretaría de Ciencia, Humanidades, Tecnología e Innovación (SECIHTI) under the project CBF 2025-I-3033.
