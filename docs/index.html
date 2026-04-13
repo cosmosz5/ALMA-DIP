@@ -33,6 +33,7 @@
       <div class="sidebar-section-title">Getting Started</div>
       <a href="#installation">Installation</a>
       <a href="#quickstart">Quick Start</a>
+      <a href="#example-output">Example Output</a>
       <a href="#input-format">Input Data Format</a>
       <a href="#output-files">Output Files</a>
     </div>
@@ -279,6 +280,24 @@ image, dirty, psf = reconstruct_dip(
     img_size=(540, 540),
     cfg=cfg, device=device,
 )</code><span class="lang-tag">python</span></pre>
+    </section>
+
+    <!-- Example output -->
+    <section id="example-output">
+      <h2>Example Output <a class="anchor" href="#example-output">#</a></h2>
+      <figure class="example-figure">
+        <img
+          src="plot_ims.png"
+          alt="Reconstructed images of the proto-planetary disk around DG Tau using ALMA-DIP"
+          class="example-img"
+        />
+        <figcaption>
+          Reconstructed images of the proto-planetary disk around DG Tau using ALMA-DIP.
+          Different values of the total-variation regularizer were tested. The value of the
+          hyperparameter is labeled on each panel. Notice the effect of the regularization
+          over the image structure.
+        </figcaption>
+      </figure>
     </section>
 
     <!-- Input format -->

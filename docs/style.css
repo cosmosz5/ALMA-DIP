@@ -435,6 +435,30 @@ td:first-child {
   font-size: 0.8rem;
 }
 
+/* ── Example figure ──────────────────────────────────────── */
+
+.example-figure {
+  margin: 1.5rem 0;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+.example-img {
+  width: 100%;
+  display: block;
+}
+
+.example-figure figcaption {
+  padding: 0.9rem 1.25rem;
+  font-size: 0.83rem;
+  color: var(--text-muted);
+  line-height: 1.6;
+  border-top: 1px solid var(--border);
+  font-style: italic;
+}
+
 /* ── Footer ──────────────────────────────────────────────── */
 
 footer {

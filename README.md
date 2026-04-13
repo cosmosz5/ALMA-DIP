@@ -7,6 +7,14 @@ uncertainty estimation.
 
 ---
 
+## Example output
+
+![Reconstructed images of the proto-planetary disk around DG Tau using ALMA-DIP](plot_ims.png)
+
+*Reconstructed images of the proto-planetary disk around DG Tau using ALMA-DIP. Different values of the total-variation regularizer were tested. The value of the hyperparameter is labeled on each panel. Notice the effect of the regularization over the image structure.*
+
+---
+
 ## How it works
 
 ```
